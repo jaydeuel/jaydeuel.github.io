@@ -1,0 +1,1402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AySnakeChronous</title>
+    <!-- Tailwind CSS --><script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts --><link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* Custom styles for the game */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* bg-gray-900 */
+        }
+        
+        .game-title {
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        /* Game Grid */
+        #game-grid {
+            display: grid;
+            border: 2px solid #4b5563; /* bg-gray-600 */
+            width: 600px; /* Fixed size for simplicity */
+            height: 600px;
+            background-color: #1f2937; /* bg-gray-800 */
+            /* Ensure rows are a fixed fraction of the grid so content can't expand them */
+            grid-auto-rows: 1fr;
+        }
+        
+        .grid-cell {
+            width: 100%;
+            /* Let the grid row control the height; center children and prevent overflow */
+            height: 100%;
+            border: 1px solid #374151; /* bg-gray-700 */
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* hover styles are applied via JS classes (.hover-valid / .hover-invalid) */
+        
+        .valid-move-indicator {
+            background-color: rgba(34, 197, 94, 0.2); /* dim green-500 with alpha */
+        }
+        
+        .hover-valid {
+            background-color: rgba(34, 197, 94, 0.4); /* green-500 with alpha */
+        }
+        
+        .hover-invalid {
+            background-color: rgba(239, 68, 68, 0.4); /* red-500 with alpha */
+        }
+
+        /* Snake Styles */
+        .snake-head {
+            border: 2px solid rgba(255, 255, 255, 0.7);
+            z-index: 10;
+        }
+        .snake-body { z-index: 5; }
+        
+        .p1-head, .p1-body { background-color: #3b82f6; } /* blue-500 */
+        .p2-head, .p2-body { background-color: #ef4444; } /* red-500 */
+        .p3-head, .p3-body { background-color: #22c55e; } /* green-500 */
+        .p4-head, .p4-body { background-color: #eab308; } /* yellow-500 */
+
+        /* Pathing */
+        .path-planned {
+            position: absolute;
+            top: 25%; left: 25%;
+            width: 50%; height: 50%;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            z-index: 15;
+            pointer-events: none;
+        }
+
+        /* Pickups */
+        .pickup {
+            /* size relative to the cell but not allowed to grow it */
+            width: 70%;
+            height: 70%;
+            margin: 0; /* center via parent flexbox */
+            max-width: 100%;
+            max-height: 100%;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+            animation: pulse 1.5s infinite;
+            border-radius: 4px; /* Slight rounding for the smaller box */
+
+            /* For text */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px; /* Slightly smaller font */
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 2px black;
+            padding: 2px; /* Add some internal padding */
+            box-sizing: border-box; /* Include padding in width/height */
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(0.9); opacity: 0.8; }
+            50% { transform: scale(1.1); opacity: 1; }
+        }
+        
+        /* Using simple box-shadows for emoji-like pickups */
+        .pickup-grow {
+            background-color: #a855f7; /* purple-500 */
+            box-shadow: 0 0 10px #a855f7;
+        }
+        .pickup-die {
+            background-color: #f59e0b; /* amber-500 */
+            box-shadow: 0 0 10px #f59e0b;
+        }
+
+        /* Custom Modal for messages */
+        #message-modal {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        
+        #message-modal.hidden {
+            opacity: 0;
+            transform: scale(0.95);
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="text-white p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto flex flex-col lg:flex-row gap-8">
+        
+        <!-- Game Area --><div class="flex-grow flex flex-col items-center">
+            <h1 class="game-title text-3xl md:text-4xl mb-4 text-center">AySnakeChronous</h1>
+            <div id="game-grid">
+                <!-- Grid will be populated by JavaScript --></div>
+        </div>
+
+        <!-- Control Panel --><div class="w-full lg:w-96 flex-shrink-0 bg-gray-800 p-6 rounded-lg shadow-xl">
+            
+            <!-- Setup Phase --><div id="setup-phase">
+                <h2 class="text-2xl font-bold mb-4 border-b border-gray-600 pb-2">Game Setup</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="game-seed" class="block text-sm font-medium text-gray-300">Game Seed</label>
+                        <div class="flex gap-2 mt-1">
+                            <input type="text" id="game-seed" class="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm" placeholder="Enter or generate a seed">
+                            <button id="generate-seed-btn" class="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-md text-sm">Generate</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="player-count" class="block text-sm font-medium text-gray-300">How many players?</label>
+                        <select id="player-count" class="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 mt-1 text-sm">
+                            <option value="2">2 Players</option>
+                            <option value="3">3 Players</option>
+                            <option value="4">4 Players</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="local-player-id" class="block text-sm font-medium text-gray-300">Which player are you?</label>
+                        <select id="local-player-id" class="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 mt-1 text-sm">
+                            <option value="1">Player 1 (Blue)</option>
+                            <option value="2">Player 2 (Red)</option>
+                            <option value="3">Player 3 (Green)</option>
+                            <option value="4">Player 4 (Yellow)</option>
+                        </select>
+                    </div>
+                    <button id="start-game-btn" class="w-full bg-green-600 hover:bg-green-700 text-lg font-bold py-3 rounded-md transition-all">Start Game</button>
+                </div>
+            </div>
+
+            <!-- Planning Phase --><div id="planning-phase" class="hidden">
+                <h2 class="text-2xl font-bold mb-4 border-b border-gray-600 pb-2">Turn <span id="turn-display">1</span> - Planning</h2>
+                <div class="space-y-4">
+                    <div class="bg-gray-900 p-4 rounded-lg text-center">
+                        <div class="text-sm text-gray-400">Your Roll</div>
+                        <div class="text-4xl font-bold"><span id="roll-display">0</span> MP</div>
+                        <div class="text-sm text-gray-400">(using <span id="die-display">D8</span>)</div>
+                    </div>
+                    <div class="bg-gray-900 p-4 rounded-lg text-center">
+                        <div class="text-sm text-gray-400">Path Plotted</div>
+                        <div class="text-4xl font-bold"><span id="path-display">0</span> / <span id="path-total-display">0</span> MP</div>
+                        <div id="roll-breakdown" class="text-sm text-gray-400 mt-1"></div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="reset-path-btn" class="w-1/2 bg-yellow-600 hover:bg-yellow-700 py-2 rounded-md">Reset Path</button>
+                        <button id="submit-turn-btn" class="w-1/2 bg-blue-600 hover:bg-blue-700 py-2 rounded-md font-bold">Submit Turn</button>
+                    </div>
+                    <div class="mt-4">
+                        <h3 class="font-bold">Player Status</h3>
+                        <ul id="player-status-list" class="space-y-1 text-sm mt-2">
+                            <!-- Player status populated by JS --></ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Exchange Phase --><div id="exchange-phase" class="hidden">
+                <h2 class="text-2xl font-bold mb-4 border-b border-gray-600 pb-2">Turn <span id="turn-display-exchange">1</span> - Exchange Moves</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-300">Your Move String (Copy & Send)</label>
+                        <div class="flex gap-2 mt-1">
+                            <input type="text" id="your-move-string" readonly class="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm text-gray-400">
+                            <button id="copy-move-btn" class="bg-gray-600 hover:bg-gray-700 px-3 py-2 rounded-md text-sm">Copy</button>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mb-2">
+                        <button id="webrtc-host-btn" class="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-md font-bold">Host</button>
+                        <button id="webrtc-join-btn" class="bg-yellow-600 hover:bg-yellow-700 px-3 py-2 rounded-md font-bold">Join</button>
+                    </div>
+                    <div id="webrtc-signaling-container" class="space-y-2 mb-2" style="display:none">
+                        <label id="webrtc-label" class="block text-sm font-medium text-gray-300"></label>
+                        <textarea id="webrtc-signal-text" class="w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-xs" rows="3"></textarea>
+                        <button id="webrtc-signal-btn" class="w-full bg-green-600 hover:bg-green-700 text-lg font-bold py-2 rounded-md transition-all">Submit</button>
+                    </div>
+                    <div id="move-inputs-container" class="space-y-2">
+                        <!-- Move inputs populated by JS -->
+                    </div>
+                    <button id="start-resolution-btn" class="w-full bg-green-600 hover:bg-green-700 text-lg font-bold py-3 rounded-md transition-all" disabled>
+                        Waiting for all moves...
+                    </button>
+                    <div class="mt-4 pt-4 border-t border-gray-700">
+                        <label class="block text-xs font-medium text-gray-400">Your Move (Last Turn):</label>
+                        <input type="text" id="last-move-string" readonly class="w-full bg-gray-900 border border-gray-700 rounded-md px-2 py-1 text-xs text-gray-500 mt-1">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Resolution Phase --><div id="resolution-phase" class="hidden">
+                <h2 class="text-2xl font-bold mb-4 border-b border-gray-600 pb-2">Turn <span id="turn-display-resolution">1</span> - Resolving</h2>
+                <div class="text-center py-8">
+                    <div class="text-xl font-bold animate-pulse">Running Simulation...</div>
+                </div>
+            </div>
+            
+            <!-- Game Over Phase --><div id="gameover-phase" class="hidden">
+                <h2 class="text-2xl font-bold mb-4 border-b border-gray-600 pb-2">Game Over!</h2>
+                <div class="text-center py-8">
+                    <div class="text-3xl font-bold" id="winner-display"></div>
+                    <button id="play-again-btn" class="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-lg font-bold py-3 rounded-md transition-all">
+                        Play Again
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Message Modal --><div id="message-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-sm text-center">
+            <h3 id="message-title" class="text-xl font-bold mb-4">Message</h3>
+            <p id="message-text" class="text-gray-300 mb-6">This is a message.</p>
+            <button id="message-close-btn" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-md font-bold">OK</button>
+        </div>
+    </div>
+    
+    <!-- Dice Roll Modal --><div id="dice-roll-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-xs text-center">
+            <h3 class="text-xl font-bold mb-4 text-gray-400">Your Roll</h3>
+            <div id="dice-roll-modal-display" class="text-8xl font-bold my-6">...</div>
+            <div id="dice-roll-modal-die" class="text-lg text-gray-400">(d8)</div>
+        </div>
+    </div>
+
+    <!-- Toast Notification --><div id="toast-notification" class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-lg transition-all duration-300 opacity-0 transform translate-y-4 pointer-events-none">
+        Move string copied!
+    </div>
+
+    <script>
+// --- Minimal WebRTC logic ---
+let rtcPeer = null;
+let rtcChannel = null;
+let rtcIsHost = false;
+let rtcConnected = false;
+const webrtcHostBtn = document.getElementById('webrtc-host-btn');
+const webrtcJoinBtn = document.getElementById('webrtc-join-btn');
+const webrtcSignalingContainer = document.getElementById('webrtc-signaling-container');
+const webrtcLabel = document.getElementById('webrtc-label');
+const webrtcSignalText = document.getElementById('webrtc-signal-text');
+const webrtcSignalBtn = document.getElementById('webrtc-signal-btn');
+
+webrtcHostBtn.addEventListener('click', () => {
+    rtcIsHost = true;
+    rtcPeer = new RTCPeerConnection();
+    rtcChannel = rtcPeer.createDataChannel('moves');
+    setupRTCChannel();
+    rtcPeer.createOffer().then(offer => {
+        return rtcPeer.setLocalDescription(offer);
+    }).then(() => {
+        webrtcSignalingContainer.style.display = '';
+        webrtcLabel.textContent = 'Share this Offer with your peer:';
+        webrtcSignalText.value = JSON.stringify(rtcPeer.localDescription);
+        webrtcSignalBtn.textContent = 'Paste Answer';
+    });
+});
+
+webrtcJoinBtn.addEventListener('click', () => {
+    rtcIsHost = false;
+    rtcPeer = new RTCPeerConnection();
+    rtcPeer.ondatachannel = (e) => {
+        rtcChannel = e.channel;
+        setupRTCChannel();
+    };
+    webrtcSignalingContainer.style.display = '';
+    webrtcLabel.textContent = 'Paste Host Offer:';
+    webrtcSignalText.value = '';
+    webrtcSignalBtn.textContent = 'Submit Offer';
+});
+
+webrtcSignalBtn.addEventListener('click', () => {
+    if (rtcIsHost) {
+        let answer;
+        try {
+            answer = new RTCSessionDescription(JSON.parse(webrtcSignalText.value));
+        } catch (e) {
+            showMessage('Error', 'Invalid answer format.');
+            return;
+        }
+        rtcPeer.setRemoteDescription(answer);
+    } else {
+        let offer;
+        try {
+            offer = new RTCSessionDescription(JSON.parse(webrtcSignalText.value));
+        } catch (e) {
+            showMessage('Error', 'Invalid offer format.');
+            return;
+        }
+        rtcPeer.setRemoteDescription(offer).then(() => {
+            return rtcPeer.createAnswer();
+        }).then(answer => {
+            return rtcPeer.setLocalDescription(answer);
+        }).then(() => {
+            webrtcLabel.textContent = 'Share this Answer with Host:';
+            webrtcSignalText.value = JSON.stringify(rtcPeer.localDescription);
+            webrtcSignalBtn.textContent = 'Done';
+        });
+    }
+});
+
+function setupRTCChannel() {
+    rtcChannel.onopen = () => {
+        rtcConnected = true;
+        showToast('WebRTC Connected!');
+        webrtcSignalingContainer.style.display = 'none';
+    };
+    rtcChannel.onmessage = (e) => {
+        try {
+            const msg = JSON.parse(e.data);
+            if (msg.type === 'move' && msg.moveString) {
+                for (let i = 1; i <= gameState.playerCount; i++) {
+                    if (i === gameState.localPlayerID) continue;
+                    const p = gameState.players.find(pl => pl.id === i);
+                    if (!p.isAlive) continue;
+                    const input = document.getElementById(`move-input-p${i}`);
+                    if (input && !input.value) {
+                        input.value = msg.moveString;
+                        input.dispatchEvent(new Event('input'));
+                        break;
+                    }
+                }
+            }
+        } catch (err) {
+            showToast('WebRTC message error');
+        }
+    };
+    rtcChannel.onclose = () => {
+        rtcConnected = false;
+        showToast('WebRTC Disconnected');
+    };
+}
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- CONSTANTS ---
+            const GRID_SIZE = 20;
+            const PLAYER_COLORS = {
+                1: { head: 'p1-head', body: 'p1-body', name: 'Player 1 (Blue)', color: '#3b82f6' },
+                2: { head: 'p2-head', body: 'p2-body', name: 'Player 2 (Red)', color: '#ef4444' },
+                3: { head: 'p3-head', body: 'p3-body', name: 'Player 3 (Green)', color: '#22c55e' },
+                4: { head: 'p4-head', body: 'p4-body', name: 'Player 4 (Yellow)', color: '#eab308' },
+            };
+            const STARTING_POSITIONS = {
+                2: [
+                    { id: 1, pos: [{x: 2, y: 2}, {x: 1, y: 2}, {x: 0, y: 2}], dir: 'RIGHT' },
+                    { id: 2, pos: [{x: 17, y: 17}, {x: 18, y: 17}, {x: 19, y: 17}], dir: 'LEFT' },
+                ],
+                3: [
+                    { id: 1, pos: [{x: 2, y: 2}, {x: 1, y: 2}, {x: 0, y: 2}], dir: 'RIGHT' },
+                    { id: 2, pos: [{x: 17, y: 2}, {x: 18, y: 2}, {x: 19, y: 2}], dir: 'LEFT' },
+                    { id: 3, pos: [{x: 2, y: 17}, {x: 1, y: 17}, {x: 0, y: 17}], dir: 'RIGHT' },
+                ],
+                4: [
+                    { id: 1, pos: [{x: 2, y: 2}, {x: 1, y: 2}, {x: 0, y: 2}], dir: 'RIGHT' },
+                    { id: 2, pos: [{x: 17, y: 2}, {x: 18, y: 2}, {x: 19, y: 2}], dir: 'LEFT' },
+                    { id: 3, pos: [{x: 2, y: 17}, {x: 1, y: 17}, {x: 0, y: 17}], dir: 'RIGHT' },
+                    { id: 4, pos: [{x: 17, y: 17}, {x: 18, y: 17}, {x: 19, y: 17}], dir: 'LEFT' },
+                ],
+            };
+            const PICKUP_TYPES = [
+                { type: 'grow', class: 'pickup-grow' },
+                { type: 'die', class: 'pickup-die' },
+            ];
+            // New constants for powerup variety
+            const GROW_AMOUNTS = [1, 3, 5, 7];
+            const DIE_AMOUNTS = [3, 6, 10];
+
+
+            // --- DOM ELEMENTS ---
+            const grid = document.getElementById('game-grid');
+            const phaseElements = {
+                setup: document.getElementById('setup-phase'),
+                planning: document.getElementById('planning-phase'),
+                exchange: document.getElementById('exchange-phase'),
+                resolution: document.getElementById('resolution-phase'),
+                gameover: document.getElementById('gameover-phase'),
+            };
+            // Setup
+            const seedInput = document.getElementById('game-seed');
+            const genSeedBtn = document.getElementById('generate-seed-btn');
+            const playerCountSelect = document.getElementById('player-count');
+            const localPlayerSelect = document.getElementById('local-player-id');
+            const startGameBtn = document.getElementById('start-game-btn');
+            // Planning
+            const turnDisplay = document.getElementById('turn-display');
+            const rollDisplay = document.getElementById('roll-display');
+            const dieDisplay = document.getElementById('die-display');
+            const pathDisplay = document.getElementById('path-display');
+            const pathTotalDisplay = document.getElementById('path-total-display');
+            const resetPathBtn = document.getElementById('reset-path-btn');
+            const submitTurnBtn = document.getElementById('submit-turn-btn');
+            const playerStatusList = document.getElementById('player-status-list');
+            // Exchange
+            const turnDisplayExchange = document.getElementById('turn-display-exchange');
+            const yourMoveString = document.getElementById('your-move-string');
+            const copyMoveBtn = document.getElementById('copy-move-btn');
+            const moveInputsContainer = document.getElementById('move-inputs-container');
+            const startResolutionBtn = document.getElementById('start-resolution-btn');
+            const lastMoveStringInput = document.getElementById('last-move-string');
+            // Resolution
+            const turnDisplayResolution = document.getElementById('turn-display-resolution');
+            // Game Over
+            const winnerDisplay = document.getElementById('winner-display');
+            const playAgainBtn = document.getElementById('play-again-btn');
+            // Modal
+            const messageModal = document.getElementById('message-modal');
+            const messageTitle = document.getElementById('message-title');
+            const messageText = document.getElementById('message-text');
+            const messageCloseBtn = document.getElementById('message-close-btn');
+            // Dice Roll Modal
+            const diceRollModal = document.getElementById('dice-roll-modal');
+            const diceRollModalDisplay = document.getElementById('dice-roll-modal-display');
+            const diceRollModalDie = document.getElementById('dice-roll-modal-die');
+            // Toast
+            const toastNotification = document.getElementById('toast-notification');
+
+            // --- GAME STATE ---
+            let gameState = {};
+            let toastTimeout = null;
+
+            // --- HELPER FUNCTIONS ---
+
+            // Seeded RNG (Mulberry32)
+            function seededRandom(seed) {
+                let a = seed;
+                return function() {
+                    a |= 0; a = a + 0x6D2B79F5 | 0;
+                    let t = Math.imul(a ^ a >>> 15, 1 | a);
+                    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+                    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+                }
+            }
+            
+            // Simple string hash for seed
+            function hashString(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    const char = str.charCodeAt(i);
+                    hash = ((hash << 5) - hash) + char;
+                    hash = hash & hash; // Convert to 32bit integer
+                }
+                return hash;
+            }
+
+            // Show/Hide UI Phases
+            function setPhase(phase) {
+                gameState.currentPhase = phase;
+                Object.keys(phaseElements).forEach(p => {
+                    phaseElements[p].classList.add('hidden');
+                });
+                if (phaseElements[phase]) {
+                    phaseElements[phase].classList.remove('hidden');
+                }
+            }
+
+            // Show custom message
+            function showMessage(title, text) {
+                messageTitle.textContent = title;
+                messageText.textContent = text;
+                messageModal.classList.remove('hidden');
+            }
+            
+            // Show toast message
+            function showToast(message) {
+                toastNotification.textContent = message;
+                toastNotification.classList.remove('opacity-0', 'translate-y-4', 'pointer-events-none');
+                toastNotification.classList.add('opacity-100', 'translate-y-0');
+
+                clearTimeout(toastTimeout);
+                toastTimeout = setTimeout(() => {
+                    toastNotification.classList.add('opacity-0', 'translate-y-4', 'pointer-events-none');
+                    toastNotification.classList.remove('opacity-100', 'translate-y-0');
+                }, 2000); // Show for 2 seconds
+            }
+
+            // Copy to clipboard
+            function copyToClipboard(text) {
+                // Use execCommand as a fallback for iframe environments
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    showToast('Move string copied to clipboard!'); // Use toast instead of modal
+                } catch (err) {
+                    showMessage('Error', 'Failed to copy text.');
+                }
+                document.body.removeChild(textArea);
+            }
+
+            // Initialize Grid
+            function initGrid() {
+                grid.innerHTML = '';
+                grid.style.gridTemplateColumns = `repeat(${GRID_SIZE}, 1fr)`;
+                for (let y = 0; y < GRID_SIZE; y++) {
+                    for (let x = 0; x < GRID_SIZE; x++) {
+                        const cell = document.createElement('div');
+                        cell.classList.add('grid-cell');
+                        cell.dataset.x = x;
+                        cell.dataset.y = y;
+                        cell.addEventListener('click', () => onGridClick(x, y));
+                        cell.addEventListener('mouseenter', () => onGridHover(x, y, true));
+                        cell.addEventListener('mouseleave', () => onGridHover(x, y, false));
+                        grid.appendChild(cell);
+                    }
+                }
+            }
+
+            // Draw Game State
+            function drawGame() {
+                // Clear grid
+                document.querySelectorAll('.grid-cell').forEach(cell => {
+                    cell.innerHTML = ''; // Clear pickups, paths
+                    cell.className = 'grid-cell'; // Clear snake colors and hovers
+                });
+
+                // Draw pickups
+                gameState.pickups.forEach(p => {
+                    const cell = grid.children[p.y * GRID_SIZE + p.x];
+                    if (cell) {
+                        const pickupDiv = document.createElement('div');
+                        const pickupInfo = PICKUP_TYPES.find(pt => pt.type === p.type);
+                        pickupDiv.classList.add('pickup', pickupInfo.class);
+                        // Add text to pickup
+                        if (p.type === 'grow') {
+                            pickupDiv.textContent = `+${p.amount}L`;
+                        } else if (p.type === 'die') {
+                            pickupDiv.textContent = `+D${p.amount}`;
+                        }
+                        cell.appendChild(pickupDiv);
+                    }
+                });
+
+                // Draw snakes
+                gameState.players.forEach(p => {
+                    if (!p.isAlive) return;
+                    p.snakeBody.forEach((seg, index) => {
+                        const cell = grid.children[seg.y * GRID_SIZE + seg.x];
+                        if (cell) {
+                            const colorInfo = PLAYER_COLORS[p.id];
+                            if (index === 0) {
+                                cell.classList.add(colorInfo.head, 'snake-head', 'snake-body');
+                            } else {
+                                cell.classList.add(colorInfo.body, 'snake-body');
+                            }
+                        }
+                    });
+                });
+                
+                // Draw planning path
+                if (gameState.currentPhase === 'planning' && gameState.localPlayer) {
+                    gameState.localPlayer.currentPath.forEach(pos => {
+                        const cell = grid.children[pos.y * GRID_SIZE + pos.x];
+                        if (cell) {
+                            const pathMarker = document.createElement('div');
+                            pathMarker.className = 'path-planned';
+                            cell.appendChild(pathMarker);
+                        }
+                    });
+                }
+                
+                // Draw valid move indicators
+                if (gameState.currentPhase === 'planning' && gameState.localPlayer && gameState.localPlayer.isAlive) {
+                    highlightValidMoves();
+                }
+            }
+            
+            function highlightValidMoves() {
+                const player = gameState.localPlayer;
+                const path = player.currentPath;
+                const currentMP = parseInt(pathTotalDisplay.textContent);
+
+                if (path.length >= currentMP) {
+                    return; // No moves left
+                }
+                
+                let lastPos;
+                if (path.length === 0) {
+                    lastPos = player.snakeBody[0]; // Head
+                } else {
+                    lastPos = path[path.length - 1];
+                }
+
+                const possibleMoves = [
+                    { x: lastPos.x, y: lastPos.y - 1 }, // Up
+                    { x: lastPos.x, y: lastPos.y + 1 }, // Down
+                    { x: lastPos.x - 1, y: lastPos.y }, // Left
+                    { x: lastPos.x + 1, y: lastPos.y }  // Right
+                ];
+                
+                possibleMoves.forEach(move => {
+                    if (isValidMove(move.x, move.y, lastPos)) {
+                        const cell = grid.children[move.y * GRID_SIZE + move.x];
+                        if (cell) {
+                            cell.classList.add('valid-move-indicator');
+                        }
+                    }
+                });
+            }
+            
+            // This is a new helper function that contains the logic from onGridClick and onGridHover
+            function isValidMove(x, y, lastPos) {
+                const player = gameState.localPlayer;
+                const path = player.currentPath;
+                
+                // Check 1: Adjacency (already implied by how we check, but good for safety)
+                const dx = Math.abs(x - lastPos.x);
+                const dy = Math.abs(y - lastPos.y);
+                if (dx + dy !== 1) return false;
+                
+                // Check 2: "No reversing"
+                let lastDir;
+                if (path.length === 0) {
+                    lastDir = player.currentDir;
+                } else {
+                    let prevPos;
+                    if(path.length === 1) prevPos = player.snakeBody[0];
+                    else prevPos = path[path.length - 2];
+                    
+                    if (lastPos.x > prevPos.x) lastDir = 'RIGHT';
+                    else if (lastPos.x < prevPos.x) lastDir = 'LEFT';
+                    else if (lastPos.y > prevPos.y) lastDir = 'DOWN';
+                    else lastDir = 'UP';
+                }
+                
+                if ((x < lastPos.x && lastDir === 'RIGHT') ||
+                    (x > lastPos.x && lastDir === 'LEFT') ||
+                    (y < lastPos.y && lastDir === 'DOWN') ||
+                    (y > lastPos.y && lastDir === 'UP')) {
+                    return false;
+                }
+
+                // Check 3: Planned path collision
+                for (const pos of path) {
+                    if (pos.x === x && pos.y === y) {
+                        return false;
+                    }
+                }
+                
+                // Check 4: Wall collision (for highlighting)
+                if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) {
+                    return false;
+                }
+
+                // All checks passed!
+                return true;
+            }
+
+            function onGridHover(x, y, isEntering) {
+                const cell = grid.children[y * GRID_SIZE + x];
+                if (!cell) return;
+
+                if (!isEntering) {
+                    cell.classList.remove('hover-valid', 'hover-invalid');
+                    return;
+                }
+
+                if (gameState.currentPhase !== 'planning' || !gameState.localPlayer || !gameState.localPlayer.isAlive) {
+                    return;
+                }
+
+                const player = gameState.localPlayer;
+                const path = player.currentPath;
+
+                // Check 1: Is this an undo click? (Hovering over existing path)
+                const pathIndex = path.findIndex(p => p.x === x && p.y === y);
+                if (pathIndex > -1) {
+                    cell.classList.add('hover-valid'); // Allow clicking to undo
+                    return;
+                }
+
+                // Check 2: Out of MP
+                const currentMP = parseInt(pathTotalDisplay.textContent);
+                if (path.length >= currentMP) {
+                    cell.classList.add('hover-invalid');
+                    return;
+                }
+
+                // Check 3: Validity
+                let lastPos;
+                if (path.length === 0) {
+                    lastPos = player.snakeBody[0]; // Head
+                } else {
+                    lastPos = path[path.length - 1];
+                }
+
+                if (isValidMove(x, y, lastPos)) {
+                    cell.classList.add('hover-valid');
+                } else {
+                    // Don't show toasts on hover — only visually mark invalid hover
+                    cell.classList.add('hover-invalid');
+                }
+            }
+
+            // --- GAME LOGIC ---
+
+            function setupGame() {
+                const seed = seedInput.value;
+                if (!seed) {
+                    showMessage('Error', 'Please enter or generate a game seed.');
+                    return;
+                }
+                
+                const playerCount = parseInt(playerCountSelect.value);
+                const localPlayerID = parseInt(localPlayerSelect.value);
+
+                if (localPlayerID > playerCount) {
+                    showMessage('Error', 'Your Player # cannot be greater than the Player Count.');
+                    return;
+                }
+
+                gameState = {
+                    gameSeed: seed,
+                    hashedSeed: hashString(seed),
+                    turn: 0,
+                    playerCount: playerCount,
+                    localPlayerID: localPlayerID,
+                    players: [],
+                    pickups: [],
+                    currentPhase: 'SETUP',
+                    allMovesReceived: {},
+                    localPlayer: null, // Will be set
+                    lastMoveStringSent: "N/A (Turn 0)", // For move history
+                };
+
+                // Initialize players
+                const startData = STARTING_POSITIONS[playerCount];
+                for (let i = 0; i < playerCount; i++) {
+                    gameState.players.push({
+                        id: startData[i].id,
+                        isAlive: true,
+                        // Deep copy of starting positions
+                        snakeBody: JSON.parse(JSON.stringify(startData[i].pos)),
+                        currentDir: startData[i].dir,
+                        currentDie: 8,
+                        permanentDieBonus: 0, // <-- New Property
+                        lastRoll: 0,
+                        currentPath: [],
+                        submittedPath: [],
+                        growQueue: 0, // Segments to add
+                    });
+                }
+                
+                gameState.localPlayer = gameState.players.find(p => p.id === gameState.localPlayerID);
+                
+                // Update local player select based on player count
+                let localPlayerOptions = '';
+                for(let i = 1; i <= playerCount; i++) {
+                    localPlayerOptions += `<option value="${i}">${PLAYER_COLORS[i].name}</option>`;
+                }
+                localPlayerSelect.innerHTML = localPlayerOptions;
+                localPlayerSelect.value = localPlayerID;
+
+                initGrid();
+                startTurn();
+            }
+            
+            function startTurn() {
+                gameState.turn++;
+                gameState.allMovesReceived = {};
+
+                // 1. Spawn Pickups (deterministically)
+                spawnPickups();
+                
+                // 2. Roll Dice (deterministically)
+                gameState.players.forEach(p => {
+                    if (!p.isAlive) {
+                        p.lastRoll = 0;
+                        return;
+                    }
+                    // Use a unique seed for each player's roll this turn
+                    const rollSeed = gameState.hashedSeed + gameState.turn * 10 + p.id;
+                    const rng = seededRandom(rollSeed);
+                    
+                    let baseRoll = Math.floor(rng() * p.currentDie) + 1;
+                    let bonusRoll = 0;
+                    if (p.permanentDieBonus > 0) {
+                        // Use a different, stable seed for the bonus roll
+                        const bonusRng = seededRandom(rollSeed + p.id); 
+                        let totalBonus = 0;
+                        let remainingBonus = p.permanentDieBonus;
+                        // Roll each die type
+                        // Prioritize higher dice, then fill in with lower ones.
+                        // This ensures consistent rolling from permanentDieBonus
+                        [10, 6, 3].forEach(dieType => {
+                            while(remainingBonus >= dieType) {
+                                totalBonus += Math.floor(bonusRng() * dieType) + 1;
+                                remainingBonus -= dieType;
+                            }
+                        });
+                        bonusRoll = totalBonus;
+                    }
+                    p.lastRoll = baseRoll + bonusRoll;
+                    
+                });
+
+                // 3. Reset local player state
+                if (gameState.localPlayer) {
+                    gameState.localPlayer.currentPath = [];
+                }
+                
+                // 4. Update UI
+                setPhase('planning');
+                turnDisplay.textContent = gameState.turn;
+                if (gameState.localPlayer) {
+                    rollDisplay.textContent = gameState.localPlayer.lastRoll;
+                    const dieString = `d${gameState.localPlayer.currentDie}` + (gameState.localPlayer.permanentDieBonus > 0 ? `+D${gameState.localPlayer.permanentDieBonus}` : '');
+                    dieDisplay.textContent = dieString; // Corrected to use d<X> format
+                    pathDisplay.textContent = 0;
+                    pathTotalDisplay.textContent = gameState.localPlayer.lastRoll;
+                    // Show roll breakdown: rolled sum / potential maximum sum (base die + bonus dice)
+                    (function() {
+                        const p = gameState.localPlayer;
+                        if (!p) return;
+                        let potentialTotal = p.currentDie;
+                        let rem = p.permanentDieBonus || 0;
+                        // The permanentDieBonus is filled by greedy chunks of d10, d6, d3
+                        [10, 6, 3].forEach(dieType => {
+                            while (rem >= dieType) {
+                                potentialTotal += dieType;
+                                rem -= dieType;
+                            }
+                        });
+                        const rb = document.getElementById('roll-breakdown');
+                        if (rb) rb.textContent = `${p.lastRoll} / ${potentialTotal}`;
+                    })();
+                }
+                submitTurnBtn.disabled = false;
+                
+                updatePlayerStatus();
+                drawGame();
+                showDiceRollModal(); // Show the new modal
+            }
+            
+            function updatePlayerStatus() {
+                playerStatusList.innerHTML = '';
+                gameState.players.forEach(p => {
+                    const li = document.createElement('li');
+                    li.style.color = p.isAlive ? PLAYER_COLORS[p.id].color : '#6b7280';
+                    const dieString = `d${p.currentDie}` + (p.permanentDieBonus > 0 ? `+D${p.permanentDieBonus}` : '');
+                    li.textContent = `${PLAYER_COLORS[p.id].name}: ${p.isAlive ? 'Alive' : 'Eliminated'} (Length: ${p.snakeBody.length}, Die: ${dieString})`;
+                    playerStatusList.appendChild(li);
+                });
+            }
+            
+            function spawnPickups() {
+                const turnSeed = gameState.hashedSeed + gameState.turn;
+                const rng = seededRandom(turnSeed);
+                const numPickups = Math.floor(rng() * (gameState.playerCount + 1)) + 1; // 1 to PC+1 pickups
+                
+                // Ensure pickups array exists and DO NOT clear it — pickups persist between turns and we only add new ones
+                if (!Array.isArray(gameState.pickups)) gameState.pickups = [];
+                
+                // Get all occupied cells (include existing pickups so we don't place new pickups on top of them)
+                let occupied = new Set();
+                gameState.players.forEach(p => {
+                    if(p.isAlive) p.snakeBody.forEach(seg => occupied.add(`${seg.x},${seg.y}`));
+                });
+                gameState.pickups.forEach(pk => occupied.add(`${pk.x},${pk.y}`));
+
+                for (let i = 0; i < numPickups; i++) {
+                    let x, y;
+                    let attempts = 0;
+                    do {
+                        x = Math.floor(rng() * GRID_SIZE);
+                        y = Math.floor(rng() * GRID_SIZE);
+                        attempts++;
+                    } while (occupied.has(`${x},${y}`) && attempts < 100);
+                    
+                    if (attempts < 100) {
+                        const typeSeed = seededRandom(turnSeed + i);
+                        const typeRng = typeSeed();
+                        let type;
+                        let amount;
+                        
+                        if (typeRng < 0.6) { // 60% chance for grow
+                            type = 'grow';
+                            const amountRng = typeSeed(); // Use same seed, next value
+                            if (amountRng < 0.25) amount = GROW_AMOUNTS[0]; // +1
+                            else if (amountRng < 0.5) amount = GROW_AMOUNTS[1]; // +3
+                            else if (amountRng < 0.75) amount = GROW_AMOUNTS[2]; // +5
+                            else amount = GROW_AMOUNTS[3]; // +7
+                        } else { // 40% chance for die
+                            type = 'die';
+                            const amountRng = typeSeed();
+                            if (amountRng < 0.33) amount = DIE_AMOUNTS[0]; // +D3
+                            else if (amountRng < 0.66) amount = DIE_AMOUNTS[1]; // +D6
+                            else amount = DIE_AMOUNTS[2]; // +D10
+                        }
+                        
+                        gameState.pickups.push({ x, y, type, amount });
+                        occupied.add(`${x},${y}`); // Avoid spawning pickups on each other
+                    }
+                }
+            }
+
+            function onGridClick(x, y) {
+                console.log(`onGridClick(${x}, ${y})`);
+                if (gameState.currentPhase !== 'planning' || !gameState.localPlayer || !gameState.localPlayer.isAlive) {
+                    console.log('Click ignored: Not planning phase or player dead.');
+                    return;
+                }
+
+                const player = gameState.localPlayer;
+                const path = player.currentPath;
+
+                // Check 1: Undo move
+                // Did the user click on an existing path marker?
+                const pathIndex = path.findIndex(p => p.x === x && p.y === y);
+                if (pathIndex > -1) {
+                    console.log(`Undo click on path index ${pathIndex}`);
+                    path.splice(pathIndex + 1); // Remove moves *after* this one
+                    recalculatePathBonuses();
+                    drawGame();
+                    return;
+                }
+
+                // Check 2: Out of MP
+                const currentMP = parseInt(pathTotalDisplay.textContent); // Use UI total, as it includes bonuses
+                if (path.length >= currentMP) {
+                    console.log('Click ignored: Out of MP.');
+                    // Don't show modal, this is now handled by "must use all moves"
+                    // showMessage('No More Moves', 'You have used all your Movement Points.');
+                    return;
+                }
+                console.log('MP check passed.');
+
+                // Check 3: Validity
+                let lastPos;
+                if (path.length === 0) {
+                    lastPos = player.snakeBody[0]; // Head
+                } else {
+                    lastPos = path[path.length - 1];
+                }
+
+                if (!isValidMove(x, y, lastPos)) {
+                    console.log('Click ignored: Not a valid move (adjacency, reverse, path collision).');
+                    // Use a non-blocking toast instead of a blocking modal for invalid clicks
+                    showToast("Invalid move — can't move there. Check reversing or crossing your own path.");
+                    return;
+                }
+                console.log('Validity check passed.');
+
+                // Add to path
+                path.push({ x, y });
+                console.log('Path pushed. New path:', JSON.stringify(player.currentPath));
+                
+                // Check for +MP pickup on path and update totals
+                recalculatePathBonuses();
+                
+                drawGame(); // Redraw to show new path and updated valid moves
+            }
+            
+            // New function to handle path/MP recalculation
+            function recalculatePathBonuses() {
+                if (!gameState.localPlayer) return;
+                
+                const player = gameState.localPlayer;
+                let bonusMP = 0;
+                
+                // Scan current path for MP pickups
+                player.currentPath.forEach(pos => {
+                    // This pickup type is removed, but logic is here if added back
+                    // const pickupOnSquare = gameState.pickups.find(p => p.x === pos.x && p.y === pos.y && p.type === 'mp');
+                    // if (pickupOnSquare) {
+                    //     bonusMP += 3;
+                    // }
+                });
+                
+                pathTotalDisplay.textContent = player.lastRoll + bonusMP;
+                pathDisplay.textContent = player.currentPath.length;
+                
+            }
+
+
+            function resetPath() {
+                if (gameState.localPlayer) {
+                    gameState.localPlayer.currentPath = [];
+                    recalculatePathBonuses(); // Resets path display and total MP
+                    drawGame();
+                }
+            }
+            
+            function submitTurn() {
+                if (!gameState.localPlayer) return;
+
+                // "Must use all moves" check
+                const player = gameState.localPlayer;
+                const path = player.currentPath;
+                const currentMP = parseInt(pathTotalDisplay.textContent);
+                if (path.length < currentMP) {
+                    // Enforce: player must use all movement points before submitting
+                    // Use a toast instead of modal so players don't get interrupted
+                    showToast(`You must use all ${currentMP} movement points.`);
+                    return;
+                }
+
+
+                if (!gameState.localPlayer.isAlive) {
+                    gameState.localPlayer.submittedPath = [];
+                } else {
+                    gameState.localPlayer.submittedPath = gameState.localPlayer.currentPath;
+                }
+                
+                // Generate Move String
+                const moveData = {
+                    playerID: gameState.localPlayerID,
+                    turn: gameState.turn,
+                    path: gameState.localPlayer.submittedPath,
+                };
+                
+                let moveString;
+                try {
+                    moveString = btoa(JSON.stringify(moveData));
+                } catch (e) {
+                    showMessage('Error', 'Failed to encode move string.');
+                    return;
+                }
+
+                setPhase('exchange');
+                turnDisplayExchange.textContent = gameState.turn;
+                yourMoveString.value = moveString;
+                lastMoveStringInput.value = gameState.lastMoveStringSent; // Set PREVIOUS turn's string
+                gameState.lastMoveStringSent = moveString; // Store NEW string for next turn
+                submitTurnBtn.disabled = true;
+
+                // Store our own move
+                gameState.allMovesReceived[`p${gameState.localPlayerID}`] = moveData.path;
+
+                // Create input fields for other players
+                moveInputsContainer.innerHTML = '';
+                for (let i = 1; i <= gameState.playerCount; i++) {
+                    if (i === gameState.localPlayerID) continue;
+                    
+                    const p = gameState.players.find(pl => pl.id === i);
+                    if (!p.isAlive) continue; // Don't need moves from dead players
+
+                    const label = document.createElement('label');
+                    label.className = 'block text-sm font-medium text-gray-300';
+                    label.textContent = `Paste ${PLAYER_COLORS[i].name}'s Move String:`;
+                    
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.id = `move-input-p${i}`;
+                    input.dataset.playerid = i;
+                    input.className = 'w-full bg-gray-900 border border-gray-700 rounded-md px-3 py-2 text-sm mt-1';
+                    input.addEventListener('input', onMoveStringInput);
+                    
+                    moveInputsContainer.appendChild(label);
+                    moveInputsContainer.appendChild(input);
+                }
+                
+                checkAllMovesReceived();
+            }
+
+            function onMoveStringInput(e) {
+                const input = e.target;
+                const str = input.value;
+                const expectedPlayerID = parseInt(input.dataset.playerid);
+
+                try {
+                    const data = JSON.parse(atob(str));
+                    
+                    if (data.turn !== gameState.turn) {
+                        input.style.borderColor = 'red';
+                        return;
+                    }
+                    if (data.playerID !== expectedPlayerID) {
+                        input.style.borderColor = 'red';
+                        return;
+                    }
+                    
+                    // Move is valid
+                    input.style.borderColor = 'green';
+                    gameState.allMovesReceived[`p${expectedPlayerID}`] = data.path;
+                    checkAllMovesReceived();
+
+                } catch (err) {
+                    input.style.borderColor = 'red';
+                    // Clear stored move if it becomes invalid
+                    if (gameState.allMovesReceived[`p${expectedPlayerID}`]) {
+                         delete gameState.allMovesReceived[`p${expectedPlayerID}`];
+                    }
+                    checkAllMovesReceived();
+                }
+            }
+            
+            function checkAllMovesReceived() {
+                let allIn = true;
+                for (let i = 1; i <= gameState.playerCount; i++) {
+                    const p = gameState.players.find(pl => pl.id === i);
+                    if (p.isAlive && !gameState.allMovesReceived[`p${i}`]) {
+                        allIn = false;
+                        break;
+                    }
+                }
+
+                if (allIn) {
+                    startResolutionBtn.disabled = false;
+                    startResolutionBtn.textContent = 'Start Resolution!';
+                } else {
+                    startResolutionBtn.disabled = true;
+                    startResolutionBtn.textContent = 'Waiting for all moves...';
+                }
+            }
+
+            function startResolution() {
+                setPhase('resolution');
+                turnDisplayResolution.textContent = gameState.turn;
+
+                // Assign submitted paths to all players
+                gameState.players.forEach(p => {
+                    if (p.isAlive) {
+                        p.submittedPath = gameState.allMovesReceived[`p${p.id}`] || [];
+                    } else {
+                        p.submittedPath = [];
+                    }
+                    p.currentPath = []; // Clear planning path
+                });
+                
+                const maxSteps = Math.max(...gameState.players.map(p => p.submittedPath.length));
+                
+                if (maxSteps === 0) {
+                    // No one moved
+                    endTurn();
+                    return;
+                }
+                
+                // NOTE: Do NOT reset grow queues here — growQueue should persist across turns until consumed.
+
+                runResolutionStep(0, maxSteps);
+            }
+            
+            function runResolutionStep(step, maxSteps) {
+                if (step >= maxSteps) {
+                    endTurn();
+                    return;
+                }
+
+                let newHeadPositions = new Map();
+                let occupiedCells = new Set();
+                let eliminations = new Set();
+
+                // 1. Calculate new head positions and tail segments
+                gameState.players.forEach(p => {
+                    if (!p.isAlive) return;
+
+                    const newPos = p.submittedPath[step];
+                    if (newPos) {
+                        // Move head
+                        p.snakeBody.unshift({ x: newPos.x, y: newPos.y });
+                        newHeadPositions.set(p.id, newPos);
+                        
+                        // Update current direction
+                        const prevPos = p.snakeBody[1];
+                        if (newPos.x > prevPos.x) p.currentDir = 'RIGHT';
+                        else if (newPos.x < prevPos.x) p.currentDir = 'LEFT';
+                        else if (newPos.y > prevPos.y) p.currentDir = 'DOWN';
+                        else p.currentDir = 'UP';
+                        
+                    } else {
+                        // Stay put, but add current head pos for collision checks
+                        newHeadPositions.set(p.id, p.snakeBody[0]);
+                    }
+                });
+
+                // 2. Build map of all body segments *before* collision check
+                gameState.players.forEach(p => {
+                    if (!p.isAlive) return;
+                    // Add all *except* the new head
+                    for (let i = 1; i < p.snakeBody.length; i++) {
+                        const seg = p.snakeBody[i];
+                        occupiedCells.add(`${seg.x},${seg.y}`);
+                    }
+                });
+
+                // 3. Check collisions (Head-to-Body, Head-to-Wall)
+                newHeadPositions.forEach((pos, id) => {
+                    // Wall collision
+                    if (pos.x < 0 || pos.x >= GRID_SIZE || pos.y < 0 || pos.y >= GRID_SIZE) {
+                        eliminations.add(id);
+                        return;
+                    }
+                    // Head-to-Body collision (any snake's body)
+                    if (occupiedCells.has(`${pos.x},${pos.y}`)) {
+                        eliminations.add(id);
+                        return;
+                    }
+                });
+                
+                // 4. Check Head-to-Head collisions
+                let headPosCounts = new Map();
+                newHeadPositions.forEach((pos, id) => {
+                    if (eliminations.has(id)) return; // Already out
+                    const posKey = `${pos.x},${pos.y}`;
+                    const count = headPosCounts.get(posKey) || [];
+                    count.push(id);
+                    headPosCounts.set(posKey, count);
+                });
+                
+                headPosCounts.forEach((ids) => {
+                    if (ids.length > 1) {
+                        // Head-to-head collision!
+                        ids.forEach(id => eliminations.add(id));
+                    }
+                });
+
+                // 5. Apply eliminations
+                eliminations.forEach(id => {
+                    const p = gameState.players.find(pl => pl.id === id);
+                    if (p) p.isAlive = false;
+                });
+
+                // 6. Process Pickups & Tails
+                gameState.players.forEach(p => {
+                    if (!p.isAlive) return;
+                    
+                    const head = p.snakeBody[0];
+                    
+                    // Check for pickup
+                    const pickupIndex = gameState.pickups.findIndex(pick => pick.x === head.x && pick.y === head.y);
+                    if (pickupIndex > -1) {
+                        const pickup = gameState.pickups[pickupIndex];
+                        
+                        if (pickup.type === 'grow') {
+                            p.growQueue += pickup.amount; // Use the varied amount
+                        } else if (pickup.type === 'die') {
+                            // GDD: Add +d_amount permanently
+                            p.permanentDieBonus += pickup.amount; // Use the varied amount
+                        }
+                        
+                        // Remove pickup
+                        gameState.pickups.splice(pickupIndex, 1);
+                    }
+                    
+                    // 7. Move Tail
+                    if (p.growQueue > 0) {
+                        p.growQueue--; // Use up one grow segment, tail doesn't pop
+                    } else if (p.submittedPath[step]) { // Only pop tail if head moved
+                        p.snakeBody.pop();
+                    }
+                });
+                
+                // 8. Redraw
+                drawGame();
+
+                // 9. Next Step
+                setTimeout(() => runResolutionStep(step + 1, maxSteps), 200); // 200ms per step
+            }
+            
+            function endTurn() {
+                // Check for winner
+                const alivePlayers = gameState.players.filter(p => p.isAlive);
+                
+                if (alivePlayers.length === 1) {
+                    // We have a winner!
+                    setPhase('gameover');
+                    winnerDisplay.textContent = `${PLAYER_COLORS[alivePlayers[0].id].name} Wins!`;
+                } else if (alivePlayers.length === 0) {
+                    // Draw
+                    setPhase('gameover');
+                    winnerDisplay.textContent = 'It\'s a Draw! (All players eliminated)';
+                } else {
+                    // Continue game
+                    startTurn();
+                }
+            }
+
+            // New function to show and animate the dice roll modal
+            function showDiceRollModal() {
+                if (!gameState.localPlayer || !gameState.localPlayer.isAlive) {
+                    // Don't show modal if player is dead
+                    return;
+                }
+
+                const player = gameState.localPlayer;
+                const dieString = `d${player.currentDie}` + (player.permanentDieBonus > 0 ? `+D${player.permanentDieBonus}` : '');
+                
+                diceRollModalDisplay.textContent = '...';
+                diceRollModalDie.textContent = `(${dieString})`;
+                diceRollModal.classList.remove('hidden');
+
+                let flickerCount = 0;
+                const maxFlickers = 15;
+                const flickerInterval = setInterval(() => {
+                    let base = Math.floor(Math.random() * player.currentDie) + 1;
+                    
+                    let bonus = 0;
+                    if (player.permanentDieBonus > 0) {
+                        let remainingBonus = player.permanentDieBonus;
+                        // Roll each die type for flicker, but don't use seeded random here
+                        [10, 6, 3].forEach(dieType => {
+                            while(remainingBonus >= dieType) {
+                                bonus += Math.floor(Math.random() * dieType) + 1;
+                                remainingBonus -= dieType;
+                            }
+                        });
+                    }
+                    
+                    diceRollModalDisplay.textContent = base + bonus;
+                    flickerCount++;
+                    
+                    if (flickerCount >= maxFlickers) {
+                        clearInterval(flickerInterval);
+                        diceRollModalDisplay.textContent = player.lastRoll;
+                        // Hide modal after a pause
+                        setTimeout(() => {
+                            diceRollModal.classList.add('hidden');
+                        }, 1000); // Wait 1 sec on final roll
+                    }
+                }, 60); // 60ms flicker
+            }
+
+
+            // --- EVENT LISTENERS ---
+            genSeedBtn.addEventListener('click', () => {
+                seedInput.value = 'seed-' + Math.random().toString(36).substring(2, 10);
+            });
+            
+            startGameBtn.addEventListener('click', setupGame);
+            
+            resetPathBtn.addEventListener('click', resetPath);
+            submitTurnBtn.addEventListener('click', submitTurn);
+            
+            copyMoveBtn.addEventListener('click', () => {
+                copyToClipboard(yourMoveString.value);
+            });
+            
+            startResolutionBtn.addEventListener('click', startResolution);
+            
+            playAgainBtn.addEventListener('click', () => {
+                // Go back to setup, but keep seed and settings
+                setPhase('setup');
+            });
+            
+            messageCloseBtn.addEventListener('click', () => {
+                messageModal.classList.add('hidden');
+            });
+
+            // --- INITIALIZATION ---
+            setPhase('setup');
+            
+            // Dynamic local player select based on player count
+            playerCountSelect.addEventListener('change', (e) => {
+                const count = parseInt(e.target.value);
+                let options = '';
+                for(let i = 1; i <= count; i++) {
+                    options += `<option value="${i}">${PLAYER_COLORS[i].name}</option>`;
+                }
+                localPlayerSelect.innerHTML = options;
+            });
+            playerCountSelect.dispatchEvent(new Event('change')); // Trigger once on load
+        });
+    </script>
+</body>
+</html>
+
